@@ -1,0 +1,10 @@
+# Минимальное количество людей, чтобы считать группу скоплением
+MIN_CROWD_NUM_OF_PEOPLE: 2
+# Размер сцены: large, medium, small
+SCENE_SIZE: 'medium'
+# Минимальное расстояние между людьми, в % / 100
+MIN_DISTANCE: 0.1
+# Минимальное пересечение по IOU между ббоксами
+IOU_THRESHOLD: 0.2
+# Conf для ключевых точек человека
+KEY_POINTS_CONFIDENCE: 0.5
