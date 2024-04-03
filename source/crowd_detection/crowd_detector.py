@@ -1,13 +1,15 @@
-import asyncio
-from typing import Tuple, Dict, List
-from collections import defaultdict
+"""
+@tarasqua
+
+Детектор скопления людей.
+Выставочная реализация, без использования трехмерных сеток, а используя лишь KMeans и YOLO-pose.
+"""
+
+from typing import Tuple, List
 from itertools import combinations, chain
 
-import cv2
 import numpy as np
-from ultralytics import YOLO
 from ultralytics.engine.results import Results
-from scipy.spatial import distance as dist
 
 from source.config_loader import Config
 from source.crowd_detection.kmeans_separator import kmeans_fit
@@ -15,6 +17,9 @@ from utils.util import iou
 
 
 class CrowdDetector:
+    """
+    Детектор скопления людей.
+    """
 
     def __init__(self, frame_shape: Tuple[int, int, int]):
         self.frame_shape = frame_shape[:-1][::-1]
@@ -186,7 +191,7 @@ class CrowdDetector:
 
     async def detect_(self, detections: Results) -> np.array:
         """
-        Обработка YOLO-pose-треков и обнаружение скоплений людей в кадре.
+        Обработка YOLO-pose-треков для обнаружения скоплений людей в кадре.
         :param detections: YOLO detections.
         :return: Ббоксы скоплений людей в формате [[x1, y1, x2, y2], [...]] (пустой, если ничего не обнаружено).
         """

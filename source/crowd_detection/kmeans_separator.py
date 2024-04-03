@@ -1,3 +1,9 @@
+"""
+@tarasqua
+
+Основные функции для взаимодействия с KMeans (обучение, подгрузка, сохранение).
+"""
+
 import os
 import fnmatch
 from pathlib import Path
