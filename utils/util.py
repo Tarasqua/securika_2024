@@ -1,10 +1,13 @@
 import asyncio
 import os
 import fnmatch
+from pathlib import Path
 
+import cv2
 import torch
 import numpy as np
 from torchvision import ops
+from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 
@@ -109,3 +112,39 @@ async def get_legs_angles(detections: Results, kpts_confidence: float = 0.5) -> 
     angles_tasks = [asyncio.to_thread(angles_, detection) for detection in detections]
     people_data = await asyncio.gather(*angles_tasks)
     return np.array([data for data in people_data if data.size != 0])  # убираем тех, у кого не нашли id
+
+
+def set_yolo_model(yolo_model: str, yolo_class: str, task: str = 'detect') -> YOLO:
+    """
+    Выполняет проверку путей и наличие модели:
+        Если директория отсутствует, создает ее, а также скачивает в нее необходимую модель
+    :param yolo_model: n (nano), m (medium), etc.
+    :param yolo_class: seg, pose, boxes
+    :param task: detect, segment, classify, pose
+    :return: Объект YOLO-pose
+    """
+    yolo_class = f'-{yolo_class}' if yolo_class != 'boxes' else ''
+    yolo_models_path = Path.cwd().parents[1] / 'resources' / 'models' / 'yolo_models'
+    if not os.path.exists(yolo_models_path):
+        Path(yolo_models_path).mkdir(parents=True, exist_ok=True)
+    model_path = os.path.join(yolo_models_path, f'yolov8{yolo_model}{yolo_class}')
+    if not os.path.exists(f'{model_path}.onnx'):
+        YOLO(model_path).export(format='onnx')
+    return YOLO(f'{model_path}.onnx', task=task, verbose=False)
+
+
+async def plot_bboxes(frame: np.array, bboxes: np.array) -> np.array:
+    """
+    Отрисовка ббоксов.
+    :param frame: Кадр для рисования.
+    :param bboxes: Ббоксы в формате [[x1, y1, x2, y2], [...]].
+    :return: Кадр с отрисованными ббоксами.
+    """
+
+    def plot_(bbox: np.array):
+        x1, y1, x2, y2 = bbox.astype(int)
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 4)
+
+    tasks = [asyncio.to_thread(plot_, bbox) for bbox in bboxes]
+    await asyncio.gather(*tasks)
+    return frame

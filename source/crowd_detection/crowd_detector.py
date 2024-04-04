@@ -21,11 +21,12 @@ class CrowdDetector:
     Детектор скопления людей.
     """
 
-    def __init__(self, frame_shape: Tuple[int, int, int]):
+    def __init__(self, frame_shape: Tuple[int, ...]):
         self.frame_shape = frame_shape[:-1][::-1]
         self.config_ = Config()
         self.config_.initialize('crowd')
         self.kmeans_ = kmeans_fit(None, self.config_.get('SCENE_SIZE'))
+        self.prev_ids = np.array([])
 
     def get_bbox_centroid(self, data: np.array, to_absolute: bool = False) -> Tuple[np.array, np.array]:
         """
@@ -189,6 +190,16 @@ class CrowdDetector:
              len(people_data[checked_ungrouped[:, 0] == data[0]]) >= self.config_.get('MIN_CROWD_NUM_OF_PEOPLE')])
         return filtered_data
 
+    def check_trigger(self, curr_ids: np.array) -> bool:
+        """
+        Нахождение новых сработок, путем нахождения новых id в списке групп людей.
+        :param curr_ids: Текущие id людей в группах.
+        :return: Найдены новые группы или нет, или же новые люди вошли в существующие группы.
+        """
+        triggered = curr_ids[~np.in1d(curr_ids, self.prev_ids)].size != 0
+        self.prev_ids = curr_ids
+        return triggered
+
     async def detect_(self, detections: Results) -> np.array:
         """
         Обработка YOLO-pose-треков для обнаружения скоплений людей в кадре.
@@ -205,5 +216,8 @@ class CrowdDetector:
                     grouped_bboxes = np.array(
                         [self.get_bbox_centroid(grouped_people[grouped_people[:, 0] == group], True)[0]
                          for group in np.unique(grouped_people[:, 0])])
+                    # return grouped_bboxes, self.check_trigger(grouped_people[:, 1])
                     return grouped_bboxes
+        self.prev_ids = np.array([])
+        # return np.array([]), False
         return np.array([])
