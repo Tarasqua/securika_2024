@@ -5,6 +5,8 @@
 Выставочная реализация, используя лишь пороги.
 """
 
+from asyncio import Queue
+
 from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
@@ -18,7 +20,8 @@ class RaisedHandsDetector:
     Детектор поднятых рук.
     """
 
-    def __init__(self):
+    def __init__(self, triggers_queue: Queue):
+        self.triggers_queue: Queue[str] = triggers_queue  # очередь для оповещения о сработке
         self.config_ = Config()
         self.config_.initialize('raised_hands')
         self.prev_ids = np.array([])  # id людей с поднятыми руками на предыдущем кадре
@@ -59,8 +62,9 @@ class RaisedHandsDetector:
             if (raising_hands := self.analyze_people(angles, detections)).size == 0:
                 return np.array([])
             # смотрим, есть ли в жестикулирующих новые id и, если да, считаем это как новую сработку
-            trigger = raising_hands[:, 1][~np.in1d(raising_hands[:, 1], self.prev_ids)].size != 0
-            self.prev_ids = raising_hands[:, 1]
+            if raising_hands[:, 0][~np.in1d(raising_hands[:, 0], self.prev_ids)].size != 0:
+                await self.triggers_queue.put('hands')
+            self.prev_ids = raising_hands[:, 0]
             return raising_hands
         self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре
         return np.array([])

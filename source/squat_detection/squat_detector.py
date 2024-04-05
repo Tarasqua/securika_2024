@@ -5,6 +5,8 @@
 Выставочная реализация, используя лишь пороги.
 """
 
+from asyncio import Queue
+
 from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
@@ -18,7 +20,8 @@ class SquatDetector:
     Детектор людей на корточках.
     """
 
-    def __init__(self):
+    def __init__(self, triggers_queue: Queue):
+        self.triggers_queue: Queue[str] = triggers_queue  # очередь для оповещения о сработке
         self.config_ = Config()
         self.config_.initialize('squat')
         self.prev_ids = np.array([])  # id людей на корточках на предыдущем кадре
@@ -56,8 +59,9 @@ class SquatDetector:
             if (squatting := self.analyze_people(angles, detections)).size == 0:
                 return np.array([])
             # смотрим, есть ли в людях на корточках новые id и, если да, считаем это как новую сработку
-            trigger = squatting[:, 1][~np.in1d(squatting[:, 1], self.prev_ids)].size != 0
-            self.prev_ids = squatting[:, 1]
+            if squatting[:, 0][~np.in1d(squatting[:, 0], self.prev_ids)].size != 0:
+                await self.triggers_queue.put('squat')
+            self.prev_ids = squatting[:, 0]
             return squatting
         self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре
         return np.array([])

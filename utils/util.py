@@ -202,7 +202,7 @@ async def plot_bboxes(frame: np.array, bboxes: np.array) -> np.array:
     """
     if bboxes.size != 0:
         bboxes_tasks = [asyncio.to_thread(
-            cv2.rectangle, frame, bbox[:2].astype(int), bbox[2:].astype(int), (0, 0, 255), 4, 8, 0
+            cv2.rectangle, frame, bbox[:2].astype(int), bbox[2:].astype(int), (0, 0, 255), 6, 8, 0
         ) for bbox in bboxes]
         await asyncio.gather(*bboxes_tasks)
     return frame
@@ -224,7 +224,7 @@ async def plot_skeletons(frame: np.array, detections: Results, conf: float = 0.5
         :return: None.
         """
         circle_tasks = [asyncio.to_thread(  # отрисовываем точки
-            cv2.circle, frame, (x, y), 5, tuple(map(int, KPTS_COLORS[i])), -1, 8, 0)
+            cv2.circle, frame, (x, y), 8, tuple(map(int, KPTS_COLORS[i])), -1, 8, 0)
             for i, x, y in points.astype(int)]
         await asyncio.gather(*circle_tasks)
 
@@ -239,7 +239,7 @@ async def plot_skeletons(frame: np.array, detections: Results, conf: float = 0.5
         limbs_tasks = [asyncio.to_thread(  # отрисовываем конечности
             cv2.line, frame,
             points[:, 1:][points[:, 0] == p1].astype(int)[0], points[:, 1:][points[:, 0] == p2].astype(int)[0],
-            tuple(map(int, LIMBS_COLORS[i])), 2, 8, 0
+            tuple(map(int, LIMBS_COLORS[i])), 4, 8, 0
         ) for i, (p1, p2) in enumerate(filtered_limbs)]
         await asyncio.gather(*limbs_tasks)
 

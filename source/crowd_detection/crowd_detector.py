@@ -5,6 +5,7 @@
 Выставочная реализация, без использования трехмерных сеток, а используя лишь KMeans и YOLO-pose.
 """
 
+from asyncio import Queue
 from typing import Tuple, List
 from itertools import combinations, chain
 
@@ -22,7 +23,8 @@ class CrowdDetector:
     Детектор скопления людей.
     """
 
-    def __init__(self):
+    def __init__(self, triggers_queue: Queue):
+        self.triggers_queue: Queue[str] = triggers_queue  # очередь для оповещения о сработке
         self.frame_shape = (0, 0)
         self.config_ = Config()
         self.config_.initialize('crowd')
@@ -220,7 +222,8 @@ class CrowdDetector:
                         [self.get_bbox_centroid(grouped_people[grouped_people[:, 0] == group], True)[0]
                          for group in np.unique(grouped_people[:, 0])])
                     # смотрим, есть ли в сгруппированных людях новые id и, если да, считаем это как новую сработку
-                    trigger = grouped_people[:, 1][~np.in1d(grouped_people[:, 1], self.prev_ids)].size != 0
+                    if grouped_people[:, 1][~np.in1d(grouped_people[:, 1], self.prev_ids)].size != 0:
+                        await self.triggers_queue.put('crowd')
                     self.prev_ids = grouped_people[:, 1]  # сохраняем текущие id
                     return grouped_bboxes
         self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре

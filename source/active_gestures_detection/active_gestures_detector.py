@@ -5,6 +5,8 @@
 Выставочная реализация, без использования таймера и сбора нормальной статистики по углам (лишь пороги).
 """
 
+from asyncio import Queue
+
 from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
@@ -18,7 +20,8 @@ class ActiveGesturesDetector:
     Детектор активной жестикуляции.
     """
 
-    def __init__(self):
+    def __init__(self, triggers_queue: Queue):
+        self.triggers_queue: Queue[str] = triggers_queue  # очередь для оповещения о сработке
         self.config_ = Config()
         self.config_.initialize('active_gestures')
         # id, mean left angle, mean right angle, active gestures count, obs time
@@ -91,8 +94,9 @@ class ActiveGesturesDetector:
             if (actively_gesturing := self.get_actively_gesturing(detections)).size == 0:
                 return np.array([])
             # смотрим, есть ли в жестикулирующих новые id и, если да, считаем это как новую сработку
-            trigger = actively_gesturing[:, 1][~np.in1d(actively_gesturing[:, 1], self.prev_ids)].size != 0
-            self.prev_ids = actively_gesturing[:, 1]
+            if actively_gesturing[:, 0][~np.in1d(actively_gesturing[:, 0], self.prev_ids)].size != 0:
+                await self.triggers_queue.put('gestures')
+            self.prev_ids = actively_gesturing[:, 0]
             return actively_gesturing
         self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре
         return np.array([])
