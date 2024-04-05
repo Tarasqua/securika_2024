@@ -5,6 +5,7 @@
 Выставочная реализация, используя лишь пороги.
 """
 
+from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
 
@@ -20,6 +21,8 @@ class SquatDetector:
     def __init__(self):
         self.config_ = Config()
         self.config_.initialize('squat')
+        self.prev_ids = np.array([])  # id людей на корточках на предыдущем кадре
+        logger.success('Squat detector successfully initialized')
 
     def analyze_people(self, angles_data: np.array, detections: Results):
         """
@@ -47,7 +50,14 @@ class SquatDetector:
         :return: Список людей на корточках и их ббоксы в формате: [[id, x1, y1, x2, y2], [...]]
             (пустой список, если ничего не нашли).
         """
-        if (len(detections) != 0 and
+        if (len(detections) != 0 and  # находим углы в ногах
                 (angles := await get_legs_angles(detections, self.config_.get('KEY_POINTS_CONFIDENCE'))).size != 0):
-            return self.analyze_people(angles, detections)
+            # находим тех, кто на корточках
+            if (squatting := self.analyze_people(angles, detections)).size == 0:
+                return np.array([])
+            # смотрим, есть ли в людях на корточках новые id и, если да, считаем это как новую сработку
+            trigger = squatting[:, 1][~np.in1d(squatting[:, 1], self.prev_ids)].size != 0
+            self.prev_ids = squatting[:, 1]
+            return squatting
+        self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре
         return np.array([])

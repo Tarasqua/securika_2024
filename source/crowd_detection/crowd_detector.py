@@ -8,6 +8,7 @@
 from typing import Tuple, List
 from itertools import combinations, chain
 
+from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
 
@@ -21,12 +22,22 @@ class CrowdDetector:
     Детектор скопления людей.
     """
 
-    def __init__(self, frame_shape: Tuple[int, ...]):
-        self.frame_shape = frame_shape[:-1][::-1]
+    def __init__(self):
+        self.frame_shape = (0, 0)
         self.config_ = Config()
         self.config_.initialize('crowd')
         self.kmeans_ = kmeans_fit(None, self.config_.get('SCENE_SIZE'))
-        self.prev_ids = np.array([])
+        self.prev_ids = np.array([])  # id людей, которые были замечены в скоплениях на предыдущем кадре
+        logger.success('Crowd detector successfully initialized')
+
+    def set_frame_shape(self, frame_shape: Tuple[int, ...]) -> None:
+        """
+        Сеттер для разрешения видеопотока.
+        :param frame_shape: Разрешение в формате (height, width, channels).
+        :return: None.
+        """
+        self.frame_shape = frame_shape[:-1][::-1]
+        logger.success('Crowd detector frame shape successfully set')
 
     def get_bbox_centroid(self, data: np.array, to_absolute: bool = False) -> Tuple[np.array, np.array]:
         """
@@ -59,9 +70,9 @@ class CrowdDetector:
             xyxy = np.array([(bbox := detection.boxes.xyxy.numpy()[0])[:-2], bbox[-2:]]) / self.frame_shape
             return np.concatenate([[person_id], xyxy.sum(axis=0) / 2])
 
-    def get_kmeans_grouped(self, detections: Results, people_centroids: np.array) -> Tuple[set, np.array]:
+    def kmeans_clusterize(self, detections: Results, people_centroids: np.array) -> Tuple[set, np.array]:
         """
-        Разделение людей по группам (кластеризация) с помощью KMeans.
+        Кластеризация людей с помощью KMeans.
         :param detections: YOLO detections.
         :param people_centroids: Id + координаты центроида человека [id, c_x, c_y].
         :return: Set из групп людей + данные по людям в формате [[group, human_id, x1, y1, x2, y2, c_x, c_y], [...]]
@@ -190,16 +201,6 @@ class CrowdDetector:
              len(people_data[checked_ungrouped[:, 0] == data[0]]) >= self.config_.get('MIN_CROWD_NUM_OF_PEOPLE')])
         return filtered_data
 
-    def check_trigger(self, curr_ids: np.array) -> bool:
-        """
-        Нахождение новых сработок, путем нахождения новых id в списке групп людей.
-        :param curr_ids: Текущие id людей в группах.
-        :return: Найдены новые группы или нет, или же новые люди вошли в существующие группы.
-        """
-        triggered = curr_ids[~np.in1d(curr_ids, self.prev_ids)].size != 0
-        self.prev_ids = curr_ids
-        return triggered
-
     async def detect_(self, detections: Results) -> np.array:
         """
         Обработка YOLO-pose-треков для обнаружения скоплений людей в кадре.
@@ -210,14 +211,18 @@ class CrowdDetector:
             people_centroids = np.array([self.get_kpts_centroid(detection) for detection in detections
                                          if detection.boxes.id is not None])
             if people_centroids.size != 0:
-                kmeans_groups, kmeans_grouped_people = self.get_kmeans_grouped(detections, people_centroids)
+                # первое приближение с помощью KMeans
+                kmeans_groups, kmeans_grouped_people = self.kmeans_clusterize(detections, people_centroids)
+                # находим людей в группах, основываясь на кластеризации через KMeans
                 grouped_people = self.clusterize_people(kmeans_groups, kmeans_grouped_people)
                 if grouped_people.size != 0:
-                    grouped_bboxes = np.array(
+                    grouped_bboxes = np.array(  # берем ббоксы групп людей в абсолютных координатах
                         [self.get_bbox_centroid(grouped_people[grouped_people[:, 0] == group], True)[0]
                          for group in np.unique(grouped_people[:, 0])])
-                    # return grouped_bboxes, self.check_trigger(grouped_people[:, 1])
+                    # смотрим, есть ли в сгруппированных людях новые id и, если да, считаем это как новую сработку
+                    trigger = grouped_people[:, 1][~np.in1d(grouped_people[:, 1], self.prev_ids)].size != 0
+                    self.prev_ids = grouped_people[:, 1]  # сохраняем текущие id
                     return grouped_bboxes
-        self.prev_ids = np.array([])
+        self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре
         # return np.array([]), False
         return np.array([])

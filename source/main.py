@@ -1,5 +1,5 @@
-
 import asyncio
+from asyncio import Queue
 from asyncio import coroutines
 from typing import List
 
@@ -8,7 +8,7 @@ import numpy as np
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics.engine.results import Results
 
-from utils.util import plot_bboxes, set_yolo_model
+from utils.util import plot_crowds, plot_bboxes, plot_skeletons, set_yolo_model
 from crowd_detection.crowd_detector import CrowdDetector
 from active_gestures_detection.active_gestures_detector import ActiveGesturesDetector
 from raised_hands_detection.raised_hands_detector import RaisedHandsDetector
@@ -27,6 +27,12 @@ class Main:
         }
         self.font = ImageFont.truetype('../resources/fonts/Gilroy-Regular.ttf', 30)
         self.background_img = cv2.imread('../resources/images/background.png')
+        self.triggers_queue: Queue[str] = Queue(20)
+
+        self.crowd_detector = CrowdDetector()
+        self.gestures_detector = ActiveGesturesDetector()
+        self.hands_detector = RaisedHandsDetector()
+        self.squat_detector = SquatDetector()
 
     def click_event(self, event, x, y, flags, params) -> None:
         """Кликер для определения координат"""
@@ -56,27 +62,28 @@ class Main:
         combined = Image.alpha_composite(image, txt_placeholder)
         return np.array(combined)
 
-    def current_running(self, crowd_: CrowdDetector, gestures_: ActiveGesturesDetector,
-                        hands_: RaisedHandsDetector, squat_: SquatDetector, detections: Results) -> List[coroutines]:
+    async def run_detectors(self, frame: np.array, detections: Results) -> np.array:
         """
-        Запустить обработку в тех детекторах, которые включены.
-        :param crowd_:
-        :param gestures_:
-        :param hands_:
-        :param squat_:
-        :param detections:
-        :return:
+        Запустить обработку в тех детекторах, которые включены, с отрисовкой на текущем кадре.
+        :param frame: Текущий кадр из видеопотока.
+        :param detections: YOLO detections.
+        :return: Кадр с отрисованными детекциями.
         """
-        running: List[coroutines] = []
         if self.detectors_data['crowd'][-1]:
-            running.append(crowd_.detect_(detections))
+            crowds = await self.crowd_detector.detect_(detections)
+            frame = await plot_crowds(frame, crowds)
+
+        running: List[coroutines] = []
         if self.detectors_data['gestures'][-1]:
-            running.append(gestures_.detect_(detections))
+            running.append(self.gestures_detector.detect_(detections))
         if self.detectors_data['hands'][-1]:
-            running.append(hands_.detect_(detections))
+            running.append(self.hands_detector.detect_(detections))
         if self.detectors_data['squat'][-1]:
-            running.append(squat_.detect_(detections))
-        return running
+            running.append(self.squat_detector.detect_(detections))
+        results = await asyncio.gather(*running)
+        if results and (filtered_results := [result for result in results if result.size != 0]):
+            frame = await plot_bboxes(frame, np.concatenate(filtered_results)[:, 1:])
+        return frame
 
     async def main(self, stream_source):
         """
@@ -89,21 +96,14 @@ class Main:
         cv2.setMouseCallback('main', self.click_event)
         cv2.setWindowProperty('main', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         _, frame = cap.read()
-        crowd_detector = CrowdDetector(frame.shape)
-        gestures_detector = ActiveGesturesDetector()
-        hands_detector = RaisedHandsDetector()
-        squat_detector = SquatDetector()
+        self.crowd_detector.set_frame_shape(frame.shape)
         reshape = tuple((np.array(frame.shape[:-1][::-1]) / 2).astype(int))
         yolo_detector = set_yolo_model('n', 'pose', 'pose')
         for detections in yolo_detector.track(
                 stream_source, classes=[0], stream=True, conf=0.5, verbose=False
         ):
-            frame = detections.plot()
-            tasks = self.current_running(
-                crowd_detector, gestures_detector, hands_detector, squat_detector, detections)
-            results = await asyncio.gather(*tasks)
-            if results and (filtered_results := [result for result in results if result.size != 0]):
-                frame = await plot_bboxes(frame, np.concatenate(filtered_results)[:, 1:])
+            frame = await plot_skeletons(detections.orig_img, detections)
+            frame = await self.run_detectors(frame, detections)
 
             show_frame = self.background_img.copy()
             show_frame[270:1030, 460:1804] = cv2.resize(frame, reshape)
@@ -115,10 +115,4 @@ class Main:
 
 if __name__ == '__main__':
     main = Main()
-    # asyncio.run(main.main('../resources/demo/pedestrians.mp4'))
     asyncio.run(main.main('rtsp://admin:Qwer123@192.168.0.108?subtype=1'))
-    # rtsp://admin:Qwer123@192.168.0.108?subtype=1
-    # asyncio.run(main.main(2))
-    # asyncio.run(main.main(1))
-    # asyncio.run(main.t('rtsp://admin:Qwer123@192.168.9.189'))
-    # asyncio.run(main.t(1))

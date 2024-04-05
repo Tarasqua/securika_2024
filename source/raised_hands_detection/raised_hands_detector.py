@@ -5,6 +5,7 @@
 Выставочная реализация, используя лишь пороги.
 """
 
+from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
 
@@ -20,6 +21,8 @@ class RaisedHandsDetector:
     def __init__(self):
         self.config_ = Config()
         self.config_.initialize('raised_hands')
+        self.prev_ids = np.array([])  # id людей с поднятыми руками на предыдущем кадре
+        logger.success('Raised hands detector successfully initialized')
 
     def analyze_people(self, angles_data: np.array, detections: Results):
         """
@@ -50,7 +53,14 @@ class RaisedHandsDetector:
         :return: Список людей с поднятыми руками и их ббоксы в формате: [[id, x1, y1, x2, y2], [...]]
             (пустой список, если ничего не нашли).
         """
-        if (len(detections) != 0 and
+        if (len(detections) != 0 and  # находим углы в руках
                 (angles := await get_hands_angles(detections, self.config_.get('KEY_POINTS_CONFIDENCE'))).size != 0):
-            return self.analyze_people(angles, detections)
+            # смотрим, у кого в кадре подняты руки
+            if (raising_hands := self.analyze_people(angles, detections)).size == 0:
+                return np.array([])
+            # смотрим, есть ли в жестикулирующих новые id и, если да, считаем это как новую сработку
+            trigger = raising_hands[:, 1][~np.in1d(raising_hands[:, 1], self.prev_ids)].size != 0
+            self.prev_ids = raising_hands[:, 1]
+            return raising_hands
+        self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре
         return np.array([])

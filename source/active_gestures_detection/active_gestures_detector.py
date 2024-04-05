@@ -5,6 +5,7 @@
 Выставочная реализация, без использования таймера и сбора нормальной статистики по углам (лишь пороги).
 """
 
+from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
 
@@ -22,6 +23,8 @@ class ActiveGesturesDetector:
         self.config_.initialize('active_gestures')
         # id, mean left angle, mean right angle, active gestures count, obs time
         self.people_data: np.array = np.array([], dtype=np.int64).reshape(0, 5)
+        self.prev_ids = np.array([])  # id людей, которые активно жестикулировали на предыдущем кадре
+        logger.success('Active gestures detector successfully initialized')
 
     def filter_people_data(self, detections: Results) -> None:
         """
@@ -50,8 +53,8 @@ class ActiveGesturesDetector:
                     self.people_data, np.array([id_, np.mean(data[1:3]), np.mean(data[3:]), 0, 1])])
                 continue
             diff = np.absolute(  # иначе же находим изменение угла в руках по нему
-                    (old_data := self.people_data[self.people_data[:, 0] == id_][0])[1:3] -
-                    np.array([(new_left := np.mean(data[1:3])), (new_right := np.mean(data[3:]))])
+                (old_data := self.people_data[self.people_data[:, 0] == id_][0])[1:3] -
+                np.array([(new_left := np.mean(data[1:3])), (new_right := np.mean(data[3:]))])
             )
             if any(diff > self.config_.get('DELTA_ANGLE_THRESHOLD')):  # делаем проверку по порогу
                 old_data[-2] += 1  # меняем количество активных жестикуляций
@@ -80,8 +83,16 @@ class ActiveGesturesDetector:
             (пустой список, если ничего не нашли).
         """
         if len(detections) != 0:
-            self.filter_people_data(detections)
-            curr_angles = await get_hands_angles(detections, self.config_.get('KEY_POINTS_CONFIDENCE'))
-            self.update_people_data(curr_angles)
-            return self.get_actively_gesturing(detections)
+            self.filter_people_data(detections)  # фильтруем сработки
+            curr_angles = await get_hands_angles(  # находим углы в руках
+                detections, self.config_.get('KEY_POINTS_CONFIDENCE'))
+            self.update_people_data(curr_angles)  # обновляем данные по людям
+            # находим тех, кто активно жестикулирует
+            if (actively_gesturing := self.get_actively_gesturing(detections)).size == 0:
+                return np.array([])
+            # смотрим, есть ли в жестикулирующих новые id и, если да, считаем это как новую сработку
+            trigger = actively_gesturing[:, 1][~np.in1d(actively_gesturing[:, 1], self.prev_ids)].size != 0
+            self.prev_ids = actively_gesturing[:, 1]
+            return actively_gesturing
+        self.prev_ids = np.array([])  # если ничего не найдено на текущем кадре
         return np.array([])
