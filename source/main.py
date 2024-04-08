@@ -1,9 +1,16 @@
+"""
+@tarasqua
+
+Запуск демонстрации.
+"""
+
 import asyncio
 import time
 from asyncio import Queue
 from asyncio import coroutines
 from typing import List
 from collections import deque
+from pathlib import Path
 
 from loguru import logger
 import cv2
@@ -20,7 +27,12 @@ from squat_detection.squat_detector import SquatDetector
 
 class Main:
 
-    def __init__(self):
+    def __init__(self, font_path: str, bg_image_path: str, ):
+        """
+        Запуск демонстрации.
+        :param font_path: Путь до шрифта.
+        :param bg_image_path: Путь до изображения с фоном.
+        """
         # название детектора, текст, координаты, вкл/выкл
         self.detectors_data = {
             'crowd': ['Скопления\nлюдей', (96, 320), False],
@@ -30,14 +42,16 @@ class Main:
         }
         self.triggers_tl_positions = ((19, 460), (19, 925), (19, 1389))  # верхние левые координаты для сработок
         self.trigger_frame_shape = (0, 0)  # размер изображения с видеопотока после сжатия (нужно для отрисовки)
-        self.font = ImageFont.truetype('../resources/fonts/Gilroy-Regular.ttf', 30)  # кнопки
-        self.triggers_font = ImageFont.truetype('../resources/fonts/Gilroy-Regular.ttf', 20)  # сработки
-        self.background_img = cv2.imread('../resources/images/background.png')
+        self.font = ImageFont.truetype(font_path, 30)  # кнопки
+        self.triggers_font = ImageFont.truetype(font_path, 20)  # сработки
+        self.background_img = cv2.imread(bg_image_path)
 
         self.triggers_queue: Queue[str] = Queue(20)  # очередь для оповещения о сработке
         self.triggers_frames: deque[np.array] = deque(maxlen=3)  # кадры сработок
         self.triggers_data: deque[str] = deque(maxlen=3)  # информация о них
         self.detections_frame = np.array([])  # кадр с отрисованными детекциями
+        self.fullscreen_mode = False  # полноэкранный режим для стрима
+        self.fullscreen_triggers_mode = False, 0  # полноэкранный режим для сработок (вкл/выкл, какой)
 
         self.crowd_detector = CrowdDetector(self.triggers_queue)
         self.gestures_detector = ActiveGesturesDetector(self.triggers_queue)
@@ -49,15 +63,28 @@ class Main:
         Callback на кликер для определения координат, куда было совершено нажатие
         """
         if event == cv2.EVENT_LBUTTONDOWN:
-            if 35 <= x <= 309:  # смотрим, на какой детектор было нажатие
-                if 297 <= y <= 407:  # и инвертируем значение вкл/выкл
-                    self.detectors_data['crowd'][-1] = not self.detectors_data['crowd'][-1]
-                elif 447 <= y <= 557:
-                    self.detectors_data['gestures'][-1] = not self.detectors_data['gestures'][-1]
-                elif 597 <= y <= 707:
-                    self.detectors_data['hands'][-1] = not self.detectors_data['hands'][-1]
-                elif 747 <= y <= 857:
-                    self.detectors_data['squat'][-1] = not self.detectors_data['squat'][-1]
+            if not self.fullscreen_mode and not self.fullscreen_triggers_mode[0]:
+                if 35 <= x <= 309:  # смотрим, на какой детектор было нажатие
+                    if 297 <= y <= 407:  # и инвертируем значение вкл/выкл
+                        self.detectors_data['crowd'][-1] = not self.detectors_data['crowd'][-1]
+                    elif 447 <= y <= 557:
+                        self.detectors_data['gestures'][-1] = not self.detectors_data['gestures'][-1]
+                    elif 597 <= y <= 707:
+                        self.detectors_data['hands'][-1] = not self.detectors_data['hands'][-1]
+                    elif 747 <= y <= 857:
+                        self.detectors_data['squat'][-1] = not self.detectors_data['squat'][-1]
+                elif 300 <= y <= 1060 and 460 <= x <= 1804:  # полноэкранный режим для стрима
+                    self.fullscreen_mode = True
+                elif 19 <= y <= 432:  # полноэкранный режим для сработок
+                    if 460 <= x <= 693 and len(self.triggers_frames) > 0:
+                        self.fullscreen_triggers_mode = True, 0
+                    elif 925 <= x <= 1158 and len(self.triggers_frames) > 1:
+                        self.fullscreen_triggers_mode = True, 1
+                    elif 1389 <= x <= 1622 and len(self.triggers_frames) > 2:
+                        self.fullscreen_triggers_mode = True, 2
+            else:
+                self.fullscreen_mode = False
+                self.fullscreen_triggers_mode = False, 0
 
     def plot_additional_data(self, frame: np.array, triggers_reshape: tuple) -> np.array:
         """
@@ -135,8 +162,9 @@ class Main:
         cv2.setWindowProperty('main', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         _, frame = cap.read()
         self.crowd_detector.set_frame_shape(frame.shape)
-        reshape = tuple((np.array(frame.shape[:-1][::-1]) / 2).astype(int))
+        reshape_main_frame = tuple((np.array(frame.shape[:-1][::-1]) / 2).astype(int))
         reshape_trigger = tuple((np.array(frame.shape[:-1][::-1]) / 6.5).astype(int))
+        reshape_full_screen = tuple((np.array(self.background_img.shape[:-1][::-1])).astype(int))
         self.trigger_frame_shape = tuple(cv2.resize(frame, reshape_trigger).shape[:-1])
         yolo_detector = set_yolo_model('n', 'pose', 'pose')
         for detections in yolo_detector.track(
@@ -144,10 +172,16 @@ class Main:
         ):
             frame = await plot_skeletons(detections.orig_img, detections)
             self.detections_frame = await self.run_detectors(frame, detections)
-            show_frame = self.background_img.copy()
-            show_frame[300:1060, 460:1804] = cv2.resize(self.detections_frame, reshape)
-            cv2.imshow('main',
-                       self.plot_additional_data(show_frame, reshape_trigger))
+            if self.fullscreen_mode:
+                cv2.imshow('main', cv2.resize(self.detections_frame, reshape_full_screen))
+            elif self.fullscreen_triggers_mode[0]:
+                cv2.imshow('main',
+                           cv2.resize(self.triggers_frames[self.fullscreen_triggers_mode[1]], reshape_full_screen))
+            else:
+                show_frame = self.background_img.copy()
+                show_frame[300:1060, 460:1804] = cv2.resize(self.detections_frame, reshape_main_frame)
+                cv2.imshow('main',
+                           self.plot_additional_data(show_frame, reshape_trigger))
             if cv2.waitKey(1) & 0xFF == 27:
                 break
         cv2.destroyAllWindows()
@@ -155,5 +189,6 @@ class Main:
 
 
 if __name__ == '__main__':
-    main = Main()
+    main = Main((Path.cwd().parents[0] / 'resources' / 'fonts' / 'Gilroy-Regular.ttf').as_posix(),
+                (Path.cwd().parents[0] / 'resources' / 'images' / 'background.png').as_posix())
     asyncio.run(main.main('rtsp://admin:Qwer123@192.168.0.108?subtype=1'))
