@@ -12,6 +12,7 @@ from typing import List
 from collections import deque
 from pathlib import Path
 
+import screeninfo
 from loguru import logger
 import cv2
 import numpy as np
@@ -159,18 +160,20 @@ class Main:
         :param stream_source:
         :return:
         """
+        screen = screeninfo.get_monitors()[0]
         trigger_task = asyncio.create_task(self.update_triggers())
         cap = cv2.VideoCapture(stream_source)
         _, frame = cap.read()
         self.crowd_detector.set_frame_shape(frame.shape)
         reshape_main_frame = tuple((np.array(frame.shape[:-1][::-1]) / 2).astype(int))
         reshape_trigger = tuple((np.array(frame.shape[:-1][::-1]) / 6.5).astype(int))
-        reshape_full_screen = tuple((np.array(self.background_img.shape[:-1][::-1])).astype(int))
+        reshape_full_screen = tuple((np.array(self.background_img.shape[:-1][::-1])))
         self.trigger_frame_shape = tuple(cv2.resize(frame, reshape_trigger).shape[:-1])
 
         cv2.namedWindow('main', cv2.WND_PROP_FULLSCREEN)
-        cv2.setMouseCallback('main', self.click_event)
+        cv2.moveWindow('main', screen.x - 1, screen.y - 1)
         cv2.setWindowProperty('main', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.setMouseCallback('main', self.click_event)
 
         yolo_detector = set_yolo_model('n', 'pose', 'pose')
         for detections in yolo_detector.track(

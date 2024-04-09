@@ -13,7 +13,7 @@ from loguru import logger
 import numpy as np
 from ultralytics.engine.results import Results
 
-from source.config_loader import Config
+from utils.config_loader import Config
 from source.crowd_detection.kmeans_separator import kmeans_fit
 from utils.util import iou
 
