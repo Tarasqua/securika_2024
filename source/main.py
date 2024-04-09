@@ -17,12 +17,16 @@ import cv2
 import numpy as np
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics.engine.results import Results
+from ultralytics.utils import LOGGER
 
-from utils.util import plot_crowds, plot_bboxes, plot_skeletons, set_yolo_model
+from utils.util import plot_crowds, plot_bboxes, plot_skeletons, set_yolo_model, UltralyticsLogsFilter
 from crowd_detection.crowd_detector import CrowdDetector
 from active_gestures_detection.active_gestures_detector import ActiveGesturesDetector
 from raised_hands_detection.raised_hands_detector import RaisedHandsDetector
 from squat_detection.squat_detector import SquatDetector
+
+
+LOGGER.addFilter(UltralyticsLogsFilter())  # фильтруем забагованные логи
 
 
 class Main:
@@ -157,15 +161,17 @@ class Main:
         """
         trigger_task = asyncio.create_task(self.update_triggers())
         cap = cv2.VideoCapture(stream_source)
-        cv2.namedWindow('main', cv2.WND_PROP_FULLSCREEN)
-        cv2.setMouseCallback('main', self.click_event)
-        cv2.setWindowProperty('main', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         _, frame = cap.read()
         self.crowd_detector.set_frame_shape(frame.shape)
         reshape_main_frame = tuple((np.array(frame.shape[:-1][::-1]) / 2).astype(int))
         reshape_trigger = tuple((np.array(frame.shape[:-1][::-1]) / 6.5).astype(int))
         reshape_full_screen = tuple((np.array(self.background_img.shape[:-1][::-1])).astype(int))
         self.trigger_frame_shape = tuple(cv2.resize(frame, reshape_trigger).shape[:-1])
+
+        cv2.namedWindow('main', cv2.WND_PROP_FULLSCREEN)
+        cv2.setMouseCallback('main', self.click_event)
+        cv2.setWindowProperty('main', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
         yolo_detector = set_yolo_model('n', 'pose', 'pose')
         for detections in yolo_detector.track(
                 stream_source, classes=[0], stream=True, conf=0.5, verbose=False
@@ -179,7 +185,8 @@ class Main:
                            cv2.resize(self.triggers_frames[self.fullscreen_triggers_mode[1]], reshape_full_screen))
             else:
                 show_frame = self.background_img.copy()
-                show_frame[300:1060, 460:1804] = cv2.resize(self.detections_frame, reshape_main_frame)
+                show_frame[300:reshape_main_frame[1] + 300, 460:reshape_main_frame[0] + 460] = (
+                    cv2.resize(self.detections_frame, reshape_main_frame))
                 cv2.imshow('main',
                            self.plot_additional_data(show_frame, reshape_trigger))
             if cv2.waitKey(1) & 0xFF == 27:

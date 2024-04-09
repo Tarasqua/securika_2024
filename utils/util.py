@@ -2,7 +2,7 @@ import asyncio
 import os
 import fnmatch
 from pathlib import Path
-from typing import List
+import logging
 
 import cv2
 import torch
@@ -251,3 +251,12 @@ async def plot_skeletons(frame: np.array, detections: Results, conf: float = 0.5
     for kpts in people_kpts:  # отрисовываем по каждому человеку
         await asyncio.gather(plot_kpts(kpts), plot_limbs(kpts))
     return frame
+
+
+class UltralyticsLogsFilter(logging.Filter):
+    """
+    Фильтрация для забагованных логов, приходящих из ultralytics.data.loaders LoadStreams.
+    """
+    def filter(self, record):
+        """Фильтруем логи"""
+        return not ('Waiting for stream' in record.getMessage())
