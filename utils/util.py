@@ -157,7 +157,7 @@ def set_yolo_model(yolo_model: str, yolo_class: str, task: str = 'detect') -> YO
     :return: Объект YOLO-pose
     """
     yolo_class = f'-{yolo_class}' if yolo_class != 'boxes' else ''
-    yolo_models_path = Path.cwd().parents[1] / 'resources' / 'models' / 'yolo_models'
+    yolo_models_path = Path.cwd().parents[0] / 'resources' / 'models' / 'yolo_models'
     if not os.path.exists(yolo_models_path):
         Path(yolo_models_path).mkdir(parents=True, exist_ok=True)
     model_path = os.path.join(yolo_models_path, f'yolov8{yolo_model}{yolo_class}')
