@@ -38,12 +38,15 @@ class RaisedHandsDetector:
         """
         # проверка на то, что-либо руки вытянуты вверх в плечах, либо человек как бы сдается
         if (filtered_angles_data := angles_data[
-            (np.any(angles_data[:, 2:4] > self.config_.get('SHOULDERS_ANGLE_THRESHOLD'))) |  # вытянуты
-            (np.any(angles_data[:, [1, -1]] < self.config_.get('ELBOW_BENT_ANGLE_THRESHOLD')) and np.any(  # сдается
-                angles_data[:, 2:4] > self.config_.get('SHOULDERS_BENT_ANGLE_THRESHOLD')))
+            (((angles_data[:, 2] > self.config_.get('SHOULDERS_BENT_ANGLE_THRESHOLD')) |
+             (angles_data[:, 3] > self.config_.get('SHOULDERS_BENT_ANGLE_THRESHOLD')))
+            & ((angles_data[:, 1] < self.config_.get('ELBOW_BENT_ANGLE_THRESHOLD')) |
+               (angles_data[:, -1] < self.config_.get('ELBOW_BENT_ANGLE_THRESHOLD')))) |
+            (((angles_data[:, 2] > self.config_.get('SHOULDERS_ANGLE_THRESHOLD')) |
+             (angles_data[:, 3] > self.config_.get('SHOULDERS_ANGLE_THRESHOLD'))))
         ]).size == 0:
             return np.array([])
-        raised_hands_ids = filtered_angles_data[0][:, 0]  # айдишники тех, у кого руки подняты
+        raised_hands_ids = filtered_angles_data[:, 0]  # айдишники тех, у кого руки подняты
         return np.array([[id_, *det.boxes.xyxy.numpy()[0].astype(int)]  # и берем их ббоксы
                          for det in detections
                          if (id_data := det.boxes.id) is not None  # на всякий случай перепроверяем

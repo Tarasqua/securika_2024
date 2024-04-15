@@ -1,4 +1,4 @@
 # Максимально допустимый угол в коленях
-ANGLES_THRESHOLD: 90
+ANGLES_THRESHOLD: 60
 # Conf для ключевых точек человека
 KEY_POINTS_CONFIDENCE: 0.5
